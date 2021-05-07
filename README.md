@@ -1,5 +1,5 @@
 # springboot-kubernetes
-To export and import the docker images
+### To export and import the docker images from local Mac to the K8s master node
 docker build -t springboot-kubernetes:2.0 .
 docker save -o /tmp/springboot-k8sV2.tar springboot-kubernetes:2.0
 
@@ -11,10 +11,10 @@ docker load -i /tmp/springboot-k8sV2.tar
 REPOSITORY                             TAG         IMAGE ID       CREATED          SIZE
 springboot-kubernetes                  2.0         e85d672d59a2   17 minutes ago   171MB
 
-Tag it to the private docker repo:
+### Tag it to the private docker repo (on K8s master node)
 docker tag springboot-kubernetes:2.0 10.163.168.91:443/choudary/springboot-kubernetes:2.0
 
-Add the private registry IP to NO_PROXY list on master node and restart docker
+### Add the private registry IP to NO_PROXY list on master node and restart docker
 [root@m2-ess-vm198 ~]# cat /etc/systemd/system/docker.service.d/http-proxy.conf
 [Service]
 Environment="HTTP_PROXY=http://web-proxy.corp.hpecorp.net:8080"
@@ -31,6 +31,7 @@ scp root@10.163.169.201:/etc/docker/certs.d/10.163.168.91:443/ca.crt /etc/docker
 [root@m2-ess-vm198 ~]# ls /etc/docker/certs.d/10.163.168.91:443
 ca.crt
 
+### Push to the private docker registry
 Now we will be able to push the docker registry
 docker push 10.163.168.91:443/choudary/springboot-kubernetes:2.0
 
