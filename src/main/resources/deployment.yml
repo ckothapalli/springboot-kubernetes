@@ -14,16 +14,8 @@ spec:
       labels:        
         app: springboot-kubernetes
     spec:
-      volumes:
-        - name: persistent-volume
-          persistentVolumeClaim:
-            claimName: springboot-kubernetes-claim2
-
       containers:
         - name: springboot-kubernetes
-          image: 10.163.168.91:443/choudary/springboot-kubernetes:1.2
+          image: 10.163.168.91:443/choudary/springboot-kubernetes:2.0
           ports:
             - containerPort: 8080
-          volumeMounts:
-            - name: persistent-volume
-              mountPath: /pv/tmp

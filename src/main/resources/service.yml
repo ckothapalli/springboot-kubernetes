@@ -8,7 +8,7 @@ spec:
   type: NodePort
   ports:
     - name: springboot-kubernetes-greeting
-      port: 88
+      port: 80
       targetPort: 8080
       protocol: TCP
   selector:           
