@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: springboot-kubernetes
+  labels:
+    app: springboot-kubernetes
+spec:
+  volumes:
+    - name: content
+      emptyDir: {}
+  containers:
+    - name: springboot-kubernetes
+      image: seekay73/springboot-kubernetes:1.0
+      volumeMounts:
+        - name: content
+          mountPath: /tmp
+      lifecycle:
+        postStart:
+          exec:
+            command:
+              - sh
+              - -c
+              - "ls /tmp/quote || (echo `date` > /tmp/quote)"
+      ports:
+        - containerPort: 8080

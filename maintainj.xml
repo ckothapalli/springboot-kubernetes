@@ -1,0 +1,15 @@
+<aspectj>
+	<aspects>
+		<concrete-aspect name="com.maintainj.inst.J2EEAspect" extends="com.maintainj.aspect.ExecutionDataAspect">
+			<pointcut name="anyExecution" expression="execution(* *.*(..)) || execution(*.new(..))"/>
+			
+		</concrete-aspect>
+	</aspects>
+	<weaver options="-proceedOnError -nowarn -XaddSerialVersionUID  -Xset:makeTjpFieldsTransient=true,avoidFinal=true -showWeaveInfo -verbose">
+		<include within="com.example.k8s.springbootkubernetes..*"/>
+		<include within="org.springframework.web..*"/>
+		<include within="org.apache.jsp..*"/>
+		<exclude within="*ObjectFactory"/>
+		<exclude within="*..*CGLIB*"/>
+	</weaver>
+</aspectj>

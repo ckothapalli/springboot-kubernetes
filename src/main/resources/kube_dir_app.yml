@@ -1,0 +1,39 @@
+apiVersion: kubedirector.hpe.com/v1beta1
+kind: KubeDirectorApp
+metadata:
+  name: kb-springboot-kubernetes
+  namespace: ms-teanant1
+spec:
+  capabilities: []
+  config:
+    roleServices:
+      - roleID: worker
+        serviceIDs:
+          - greetings
+    selectedRoles:
+      - worker
+  configSchemaVersion: 8
+  defaultImageRepoTag: 10.163.168.91:443/choudary/springboot-kubernetes:1.3
+  defaultPersistDirs:
+    - /pv/tmp
+  distroID: kb-springboot-kubernetes
+  label:
+    description: kb-springboot-kubernetes-desc
+    name: kb-springboot-kubernetes
+  roles:
+    - cardinality: 1+
+      id: worker
+      minResources:
+        cpu: '1'
+        memory: 1000Mi
+  services:
+    - endpoint:
+        hasAuthToken: false
+        isDashboard: true
+        port: 8080
+        urlScheme: http
+      id: greetings
+      label:
+        name: greetings
+  systemdRequired: false
+  version: '1'

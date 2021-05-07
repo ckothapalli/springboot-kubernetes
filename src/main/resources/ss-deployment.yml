@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ss-springboot-kubernetes
+  labels:
+    app: ss-springboot-kubernetes
+spec:
+  serviceName: ss-springboot-kubernetes
+  selector:
+    matchLabels:
+      app: ss-springboot-kubernetes
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: ss-springboot-kubernetes
+    spec:
+      containers:
+        - name: ss-springboot-kubernetes
+          image: 10.163.168.91:443/choudary/springboot-kubernetes:1.2
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: ss-springboot-kubernetes-claim
+              mountPath: /pv/tmp
+  volumeClaimTemplates:
+    - metadata:
+        name: ss-springboot-kubernetes-claim
+      spec:
+        accessModes:
+          - ReadWriteMany
+        resources:
+          requests:
+            storage: 1Gi
