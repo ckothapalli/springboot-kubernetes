@@ -86,4 +86,114 @@ External Traffic Policy:  Cluster
 Events:                   <none>
 ```
 
+### Test the application from outside of ECP
+The application url is provided in the service description by the Annotations. We can access the application from the 
+local machine.
+```
+(base) -bash-3.2$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10004/greeting
+Hello! Current time is: Fri May 07 18:34:57 GMT 2021
+```
 
+## Network connectivity
+There are many hops for the http request from the local machine to reach the application running in a container in the pod.
+ECP provides a haproxy load balancer running in the Gateway node that routes the requests coming from outside. 
+This load balancer forwards the requests to the Service object through the NodePort through the Service object 
+to the Pod to the Container running in the Pod.
+
+LoadBalancer -> NodePort -> Service -> Pod -> Container
+
+### Accessing the application through the NodePort
+In the first test, we accessed application through the LoadBalancer port.
+Let's try accessing the application on the NodePort. The NodePort 30354 can be seen in the Service object and 
+the host name is listed by the `get pods -o wide` command. In this network path, we are bypassing the load balancer.
+```
+(base) -bash-3.2$ curl http://m2-e910-201.mip.storage.hpecorp.net:30354/greeting
+Hello! Current time is: Fri May 07 19:03:11 GMT 2021
+```
+
+### Can we access the application through the Service object?
+I am not able to do this, but the Service object itself has the IP and port. 
+The Cluster-IP (10.99.20.216) field when you list the services is the IP and port is 88 in our case. 
+The IP can be seen in the service description as well.
+The curl command fails on the Service IP:port, but telnet works. Probably the Service object does not 
+understand http protocol
+```
+[root@m2-ess-vm198 ~]# curl http://10.99.20.216:88/greeting
+^C
+[root@m2-ess-vm198 ~]# telnet 10.99.20.216 88
+Trying 10.99.20.216...
+Connected to 10.99.20.216.
+Escape character is '^]'.
+```
+### Port forwarding to Pod 
+To test if the application is running in the Pod on port 8080, we can port forward from local Mac.
+In the sample below, I am doing it from the K8s master node because I did not configure kubectl on Mac, but this can 
+really be done from Mac as well.
+```
+[root@m2-ess-vm198 ~]# kubectl port-forward springboot-kubernetes-86c4f866fc-nlpc5 7773:8080
+Forwarding from 127.0.0.1:7773 -> 8080
+```
+
+In another terminal, ssh to the master node and test the application:
+```
+[root@m2-ess-vm198 ~]# hostname
+m2-ess-vm198.mip.storage.hpecorp.net
+[root@m2-ess-vm198 ~]# curl http://localhost:7773/greeting
+Hello! Current time is: Fri May 07 20:56:56 GMT 2021
+```
+
+### DNS
+I need to understand this better, but there is a DNS server for the pods and services to talk to each other.
+This can be seen if we login to any pod. Below, we first login to a pod and then issue nslookup to the Service 
+object by its name. The resolve.conf file can also be seen. Also note the Service host full name. 
+```
+[root@m2-ess-vm198 ~]# kubectl exec -it springboot-kubernetes-86c4f866fc-nlpc5 -- /bin/sh
+/ # nslookup springboot-kubernetes
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+Name:	springboot-kubernetes.default.svc.cluster.local
+Address: 10.99.20.216
+
+/ # cat /etc/resolv.conf
+nameserver 10.96.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local mip.storage.hpecorp.net
+options ndots:5
+/ #
+```
+
+### To check the logs of the application running in the container
+Truncated the log. As there is only one container in the pod, we don't need to specify the conatiner name.
+```
+[root@m2-ess-vm198 ~]# kubectl logs --since=24h springboot-kubernetes-86c4f866fc-nlpc5
+
+2021-05-07 04:01:39.777  INFO 1 --- [           main] c.e.k.s.SpringbootKubernetesApplication  : Starting SpringbootKubernetesApplication v0.0.1-SNAPSHOT on springboot-kubernetes-86c4f866fc-nlpc5 with PID 1 (/app.jar started by root in /)
+2021-05-07 04:01:41.213  INFO 1 --- [           main] c.e.k.s.SpringbootKubernetesApplication  : Started SpringbootKubernetesApplication in 1.757 seconds (JVM running for 2.146)
+In WelcomeController.greeting
+```
+If we want, we can find the container name using `kubectl describe pod <pod name>` and specify that in the command.
+```
+kubectl logs springboot-kubernetes-86c4f866fc-nlpc5 springboot-kubernetes
+```
+
+### To login to the pod
+```
+kubectl exec -it springboot-kubernetes-86c4f866fc-nlpc5 -- /bin/sh
+
+/ # ps -ef
+PID   USER     TIME  COMMAND
+    1 root      1:05 java -jar app.jar
+```
+We can also login to the docker container directly. Login to the worker node 201 and run the below.
+```
+[root@m2-e910-201 ~]# docker ps
+CONTAINER ID   IMAGE                                              COMMAND                  CREATED        STATUS        PORTS     NAMES
+3306e8f8e3f9   10.163.168.91:443/choudary/springboot-kubernetes   "java -jar app.jar"      17 hours ago   Up 17 hours             k8s_springboot-kubernetes_springboot-kubernetes-86c4f866fc-nlpc5_default_54635e7c-f3fe-4d86-afaf-1527ca3ca8cf_1
+
+[root@m2-e910-201 ~]# docker exec -it 3306e8f8e3f9 /bin/bash
+bash-5.0# ls /
+app.jar  bin  dev  etc	home  lib  lib64  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var
+bash-5.0# ps ef
+PID   USER     TIME  COMMAND
+    1 root      1:06 java -jar app.jar
+```
