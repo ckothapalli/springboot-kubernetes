@@ -6,194 +6,308 @@
 
 ### To export and import the docker images from local Mac to the K8s master node
 ```
-docker build -t springboot-kubernetes:2.0 .
-docker save -o /tmp/springboot-k8sV2.tar springboot-kubernetes:2.0
+docker build -t springboot-kubernetes:volume_mount .
+docker save -o /tmp/springboot-k8s-volume_mount.tar springboot-kubernetes:volume_mount
 
-scp /tmp/springboot-k8sV2.tar root@10.163.168.253:/tmp
+scp /tmp/springboot-k8s-volume_mount.tar root@10.163.168.253:/tmp
 ```
 On the K8s master node 253:
 ```
-docker load -i /tmp/springboot-k8sV2.tar
+docker load -i /tmp/springboot-k8s-volume_mount.tar
 [root@m2-ess-vm198 ~]# docker images
-REPOSITORY                             TAG         IMAGE ID       CREATED          SIZE
-springboot-kubernetes                  2.0         e85d672d59a2   17 minutes ago   171MB
+REPOSITORY                                         TAG            IMAGE ID       CREATED          SIZE
+springboot-kubernetes                              volume_mount   271c17895546   17 minutes ago   171MB
 ```
 ### Tag it to the private docker repo (on K8s master node)
 ```
-docker tag springboot-kubernetes:2.0 10.163.168.91:443/choudary/springboot-kubernetes:2.0
+docker tag springboot-kubernetes:volume_mount 10.163.168.91:443/choudary/springboot-kubernetes:volume_mount
 ```
-
-### Add the private registry IP to NO_PROXY list on master node and restart docker
-```
-[root@m2-ess-vm198 ~]# cat /etc/systemd/system/docker.service.d/http-proxy.conf
-[Service]
-Environment="HTTP_PROXY=http://web-proxy.corp.hpecorp.net:8080"
-Environment="HTTPS_PROXY=http://web-proxy.corp.hpecorp.net:8080"
-#Environment="NO_PROXY=$no_proxy"
-#Environment="NO_PROXY=localhost,127.0.0.1,10.163.168.248,10.163.168.249,10.163.168.250,10.163.168.25[1-2],10.163.168.25[3-5],10.163.169.20[1-3],.mip.storage.hpecorp.net"
-Environment="NO_PROXY=localhost,127.0.0.1,10.163.168.248,10.163.168.249,10.163.168.250,10.163.168.251,10.163.168.252,10.163.168.253,10.163.168.254,10.163.168.255,10.163.169.201,10.163.169.202,10.163.169.203,10.163.169.204,10.163.169.205,10.163.169.206,10.163.169.207,10.163.169.208,10.163.169.209,10.163.169.210,10.163.169.211,10.163.169.212,.mip.storage.hpecorp.net,10.163.168.91"
-
-systemctl daemon-reload
-systemctl restart docker
-```
-
-On the master node, copy the ca.crt file from the registry machine to the location below. In the below example, it is copied from another worker node to the master node
-```
-scp root@10.163.169.201:/etc/docker/certs.d/10.163.168.91:443/ca.crt /etc/docker/certs.d/10.163.168.91\:443/
-[root@m2-ess-vm198 ~]# ls /etc/docker/certs.d/10.163.168.91:443
-ca.crt
 
 ### Push to the private docker registry
 Now we will be able to push the docker registry
-docker push 10.163.168.91:443/choudary/springboot-kubernetes:2.0
-
-[root@m2-ess-vm198 ~]# docker images
-REPOSITORY                                         TAG         IMAGE ID       CREATED          SIZE
-10.163.168.91:443/choudary/springboot-kubernetes   2.0         e85d672d59a2   30 minutes ago   171MB
-springboot-kubernetes                              2.0         e85d672d59a2   30 minutes ago   171MB
+```
+docker push 10.163.168.91:443/choudary/springboot-kubernetes:volume_mount
 ```
 
 ### Deploy the 'deployment' and 'service' on the master node
 Check the yaml files in the resources folder. 
+Create a new namespace volume-mount first and create the deployment and service in that namespace.
 ```
-kubectl apply -f deployment.yml
-kubectl apply -f service.yml
+kubectl create namespace volume-mount
+kubectl apply -f deployment.yml --namespace=volume-mount
+kubectl apply -f service.yml --namespace=volume-mount
+```
+#### Deployment description
 
-[root@m2-ess-vm198 ~]# kubectl get po -o wide
-NAME                                     READY   STATUS    RESTARTS   AGE   IP            NODE                                  NOMINATED NODE   READINESS GATES
-springboot-kubernetes-86c4f866fc-nlpc5   1/1     Running   1          15h   10.192.3.30   m2-e910-201.mip.storage.hpecorp.net   <none>           <none>
-  
-[root@m2-ess-vm198 ~]# kubectl get services
-NAME                    TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)        AGE
-springboot-kubernetes   NodePort    10.99.20.216   <none>        88:30354/TCP   15h
-  
-[root@m2-ess-vm198 ~]# kubectl describe service springboot-kubernetes
+```
+[root@m2-ess-vm198 volume_mount]# kubectl get deployment -n volume-mount
+NAME                    READY   UP-TO-DATE   AVAILABLE   AGE
+springboot-kubernetes   2/2     2            2           <invalid>
+
+[root@m2-ess-vm198 volume_mount]# kubectl describe deployment springboot-kubernetes -n volume-mount
+Name:                   springboot-kubernetes
+Namespace:              volume-mount
+CreationTimestamp:      Sun, 09 May 2021 13:45:11 -0700
+Labels:                 app=springboot-kubernetes
+Annotations:            deployment.kubernetes.io/revision: 1
+Selector:               app=springboot-kubernetes
+Replicas:               2 desired | 2 updated | 2 total | 2 available | 0 unavailable
+StrategyType:           RollingUpdate
+MinReadySeconds:        0
+RollingUpdateStrategy:  25% max unavailable, 25% max surge
+Pod Template:
+  Labels:  app=springboot-kubernetes
+  Containers:
+   springboot-kubernetes:
+    Image:        10.163.168.91:443/choudary/springboot-kubernetes:volume_mount
+    Port:         8080/TCP
+    Host Port:    0/TCP
+    Environment:  <none>
+    Mounts:
+      /tmp/host from host-tmp (rw)
+      /tmp/pod_temp from content (rw)
+  Volumes:
+   content:
+    Type:       EmptyDir (a temporary directory that shares a pod's lifetime)
+    Medium:
+    SizeLimit:  <unset>
+   host-tmp:
+    Type:          HostPath (bare host directory volume)
+    Path:          /tmp
+    HostPathType:
+Conditions:
+  Type           Status  Reason
+  ----           ------  ------
+  Available      True    MinimumReplicasAvailable
+  Progressing    True    NewReplicaSetAvailable
+OldReplicaSets:  springboot-kubernetes-578f5d7df (2/2 replicas created)
+NewReplicaSet:   <none>
+Events:
+  Type    Reason             Age    From                   Message
+  ----    ------             ----   ----                   -------
+  Normal  ScalingReplicaSet  5m15s  deployment-controller  Scaled up replica set springboot-kubernetes-578f5d7df to 2
+```
+
+#### Pod description  
+```
+[root@m2-ess-vm198 volume_mount]# kubectl get po -n volume-mount
+NAME                                    READY   STATUS    RESTARTS   AGE
+springboot-kubernetes-578f5d7df-7668b   1/1     Running   0          <invalid>
+springboot-kubernetes-578f5d7df-7p6xt   1/1     Running   0          <invalid>
+
+[root@m2-ess-vm198 volume_mount]# kubectl describe po springboot-kubernetes-578f5d7df-7668b -n volume-mount
+Name:         springboot-kubernetes-578f5d7df-7668b
+Namespace:    volume-mount
+Priority:     0
+Node:         m2-e910-201.mip.storage.hpecorp.net/10.163.169.201
+Start Time:   Sun, 09 May 2021 13:45:11 -0700
+Labels:       app=springboot-kubernetes
+              pod-template-hash=578f5d7df
+Annotations:  cni.projectcalico.org/podIP: 10.192.3.34/32
+              cni.projectcalico.org/podIPs: 10.192.3.34/32
+              kubernetes.io/psp: hcp-psp-privileged
+Status:       Running
+IP:           10.192.3.34
+IPs:
+  IP:           10.192.3.34
+Controlled By:  ReplicaSet/springboot-kubernetes-578f5d7df
+Containers:
+  springboot-kubernetes:
+    Container ID:   docker://cb6ab00d6781b4d63c20280e6363cbaebf0a5bdbebc8288504ac1eba198b048a
+    Image:          10.163.168.91:443/choudary/springboot-kubernetes:volume_mount
+    Image ID:       docker-pullable://10.163.168.91:443/choudary/springboot-kubernetes@sha256:01f1fcd5ec145932c3a25b3c73639d01276fe778fb90a97c031d96c374809b8b
+    Port:           8080/TCP
+    Host Port:      0/TCP
+    State:          Running
+      Started:      Sun, 09 May 2021 13:45:12 -0700
+    Ready:          True
+    Restart Count:  0
+    Environment:    <none>
+    Mounts:
+      /tmp/host from host-tmp (rw)
+      /tmp/pod_temp from content (rw)
+      /var/run/secrets/kubernetes.io/serviceaccount from default-token-96p8n (ro)
+Conditions:
+  Type              Status
+  Initialized       True
+  Ready             True
+  ContainersReady   True
+  PodScheduled      True
+Volumes:
+  content:
+    Type:       EmptyDir (a temporary directory that shares a pod's lifetime)
+    Medium:
+    SizeLimit:  <unset>
+  host-tmp:
+    Type:          HostPath (bare host directory volume)
+    Path:          /tmp
+    HostPathType:
+  default-token-96p8n:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  default-token-96p8n
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                 node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type    Reason     Age   From               Message
+  ----    ------     ----  ----               -------
+  Normal  Scheduled  45s   default-scheduler  Successfully assigned volume-mount/springboot-kubernetes-578f5d7df-7668b to m2-e910-201.mip.storage.hpecorp.net
+  Normal  Pulling    45s   kubelet            Pulling image "10.163.168.91:443/choudary/springboot-kubernetes:volume_mount"
+  Normal  Pulled     45s   kubelet            Successfully pulled image "10.163.168.91:443/choudary/springboot-kubernetes:volume_mount" in 557.892414ms
+  Normal  Created    45s   kubelet            Created container springboot-kubernetes
+  Normal  Started    45s   kubelet            Started container springboot-kubernetes
+```
+
+#### Service description
+Note that there is a warning message in the Events section and there is also no Annotation
+showing the url for the service.
+```
+[root@m2-ess-vm198 volume_mount]# kubectl get service -n volume-mount
+NAME                    TYPE       CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+springboot-kubernetes   NodePort   10.107.206.14   <none>        80:30909/TCP   9m
+[root@m2-ess-vm198 volume_mount]# kubectl describe service springboot-kubernetes  -n volume-mount
 Name:                     springboot-kubernetes
-Namespace:                default
+Namespace:                volume-mount
 Labels:                   hpecp.hpe.com/hpecp-internal-gateway=true
-Annotations:              hpecp-internal-gateway/88: m2-ess-vm196.mip.storage.hpecorp.net:10004
+Annotations:              <none>
 Selector:                 app=springboot-kubernetes
 Type:                     NodePort
 IP Families:              <none>
-IP:                       10.99.20.216
-IPs:                      10.99.20.216
-Port:                     springboot-kubernetes-greeting  88/TCP
+IP:                       10.107.206.14
+IPs:                      10.107.206.14
+Port:                     springboot-kubernetes-greeting  80/TCP
 TargetPort:               8080/TCP
-NodePort:                 springboot-kubernetes-greeting  30354/TCP
-Endpoints:                10.192.3.30:8080
+NodePort:                 springboot-kubernetes-greeting  30909/TCP
+Endpoints:                10.192.3.33:8080,10.192.3.34:8080
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:
+  Type     Reason  Age                   From         Message
+  ----     ------  ----                  ----         -------
+  Warning  HpeCp   4m52s (x17 over 10m)  hpecp-agent  Failed to query HPECP K8S services
+```
+The Controller service was down for some reason and that might have caused the above issue. 
+Once the ECP Controller is restarted, the service worked just fine.
+```
+[root@m2-ess-vm198 ~]# kubectl describe service springboot-kubernetes -n volume-mount
+Name:                     springboot-kubernetes
+Namespace:                volume-mount
+Labels:                   hpecp.hpe.com/hpecp-internal-gateway=true
+Annotations:              hpecp-internal-gateway/80: m2-ess-vm196.mip.storage.hpecorp.net:10005
+Selector:                 app=springboot-kubernetes
+Type:                     NodePort
+IP Families:              <none>
+IP:                       10.103.23.122
+IPs:                      10.103.23.122
+Port:                     springboot-kubernetes-greeting  80/TCP
+TargetPort:               8080/TCP
+NodePort:                 springboot-kubernetes-greeting  31991/TCP
+Endpoints:                10.192.3.33:8080,10.192.3.34:8080
 Session Affinity:         None
 External Traffic Policy:  Cluster
 Events:                   <none>
 ```
-
 ### Test the application from outside of ECP
 The application url is provided in the service description by the Annotations. We can access the application from the 
 local machine.
+The first request is to get the greeting from the stateless app. This would help to validate 
+that the application is working fine.<br>
+The second request is to POST a greeting to the application and store it to the `emptyDir` 
+volume.<br> 
+The third request reads the greetings from the file saved in the pod and displays 
+all greetings.
 ```
-(base) -bash-3.2$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10004/greeting
-Hello! Current time is: Fri May 07 18:34:57 GMT 2021
+(base) -bash-3.2$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10005/emptydir/greeting
+Hello! Current time is: Mon May 10 14:59:56 GMT 2021
+
+(base) -bash-3.2$ curl -X POST -d 'Welcome'  http://m2-ess-vm196.mip.storage.hpecorp.net:10005/emptydir/post_greetings
+Welcome= saved successfully
+
+(base) -bash-3.2$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10005/emptydir/get_all_greetings
+["Hello stored in host:springboot-kubernetes-578f5d7df-7p6xt on Mon May 10 15:01:00 GMT 2021 in file /tmp/pod_temp/greetingsFile.txt",
+"Welcome= stored in host:springboot-kubernetes-578f5d7df-7p6xt on Mon May 10 15:04:48 GMT 2021 in file /tmp/pod_temp/greetingsFile.txt"]
 ```
 
-## Network connectivity
-There are many hops for the http request from the local machine to reach the application running in a container in the pod.
-ECP provides a haproxy load balancer running in the Gateway node that routes the requests coming from outside. 
-This load balancer forwards the requests to the Service object through the NodePort through the Service object 
-to the Pod to the Container running in the Pod.
+### emptyDir volume type
+We can see the file stored in the pod at the location of the mount path `mountPath: /tmp/pod_temp`
+specified in the deployment.yml for the `emptyDir` volume. 
 
-LoadBalancer -> NodePort -> Service -> Pod -> Container
+```
+      volumes:
+        - name: content
+          emptyDir: {}
+      containers:
+        - name: springboot-kubernetes
+          image: 10.163.168.91:443/choudary/springboot-kubernetes:volume_mount
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: content
+              mountPath: /tmp/pod_temp  #A /pod_temp folder created inside a pod that persists across container restarts. Application should write to this folder
 
-### Accessing the application through the NodePort
-In the first test, we accessed application through the LoadBalancer port.
-Let's try accessing the application on the NodePort. The NodePort 30354 can be seen in the Service object and 
-the host name is listed by the `get pods -o wide` command. In this network path, we are bypassing the load balancer.
-```
-(base) -bash-3.2$ curl http://m2-e910-201.mip.storage.hpecorp.net:30354/greeting
-Hello! Current time is: Fri May 07 19:03:11 GMT 2021
-```
 
-### Can we access the application through the Service object?
-I am not able to do this, but the Service object itself has the IP and port. 
-The Cluster-IP (10.99.20.216) field when you list the services is the IP and port is 88 in our case. 
-The IP can be seen in the service description as well.
-The curl command fails on the Service IP:port, but telnet works. Probably the Service object does not 
-understand http protocol
-```
-[root@m2-ess-vm198 ~]# curl http://10.99.20.216:88/greeting
-^C
-[root@m2-ess-vm198 ~]# telnet 10.99.20.216 88
-Trying 10.99.20.216...
-Connected to 10.99.20.216.
-Escape character is '^]'.
-```
-### Port forwarding to Pod 
-To test if the application is running in the Pod on port 8080, we can port forward from local Mac.
-In the sample below, I am doing it from the K8s master node because I did not configure kubectl on Mac, but this can 
-really be done from Mac as well.
-```
-[root@m2-ess-vm198 ~]# kubectl port-forward springboot-kubernetes-86c4f866fc-nlpc5 7773:8080
-Forwarding from 127.0.0.1:7773 -> 8080
-```
+[root@m2-ess-vm198 ~]# kubectl get po -n volume-mount -o wide
+NAME                                    READY   STATUS    RESTARTS   AGE   IP            NODE                                  NOMINATED NODE   READINESS GATES
+springboot-kubernetes-578f5d7df-7668b   1/1     Running   0          18h   10.192.3.34   m2-e910-201.mip.storage.hpecorp.net   <none>           <none>
+springboot-kubernetes-578f5d7df-7p6xt   1/1     Running   0          18h   10.192.3.33   m2-e910-201.mip.storage.hpecorp.net   <none>           <none>
 
-In another terminal, ssh to the master node and test the application:
+[root@m2-ess-vm198 ~]# kubectl exec -it springboot-kubernetes-578f5d7df-7p6xt -n volume-mount -- /bin/sh
+
+/ # cat /tmp/pod_temp/greetingsFile.txt
+Hello stored in host:springboot-kubernetes-578f5d7df-7p6xt on Mon May 10 15:01:00 GMT 2021 in file /tmp/pod_temp/greetingsFile.txt
+Welcome= stored in host:springboot-kubernetes-578f5d7df-7p6xt on Mon May 10 15:04:48 GMT 2021 in file /tmp/pod_temp/greetingsFile.txt
 ```
-[root@m2-ess-vm198 ~]# hostname
-m2-ess-vm198.mip.storage.hpecorp.net
-[root@m2-ess-vm198 ~]# curl http://localhost:7773/greeting
-Hello! Current time is: Fri May 07 20:56:56 GMT 2021
+Note that another greeting posted to the same URL is saevd to a different pod because this
+deployment has 2 pod replicas. The volume is local to the pod and the `get_all_greetings` 
+request returns the greetings from the pod where the request is directed to by the Service.
+```
+(base) -bash-3.2$ curl -X POST -d 'How are you?'  http://m2-ess-vm196.mip.storage.hpecorp.net:10005/emptydir/post_greetings
+How+are+you%3F= saved successfully
+
+[root@m2-ess-vm198 ~]# kubectl exec -it springboot-kubernetes-578f5d7df-7668b -n volume-mount -- /bin/sh
+/ # cat /tmp/pod_temp/greetingsFile.txt
+How+are+you%3F= stored in host:springboot-kubernetes-578f5d7df-7668b on Mon May 10 15:04:12 GMT 2021 in file /tmp/pod_temp/greetingsFile.txt
 ```
 
-### DNS
-I need to understand this better, but there is a DNS server for the pods and services to talk to each other.
-This can be seen if we login to any pod. Below, we first login to a pod and then issue nslookup to the Service 
-object by its name. The resolve.conf file can also be seen. Also note the Service host full name. 
-```
-[root@m2-ess-vm198 ~]# kubectl exec -it springboot-kubernetes-86c4f866fc-nlpc5 -- /bin/sh
-/ # nslookup springboot-kubernetes
-Server:		10.96.0.10
-Address:	10.96.0.10:53
+### hostPath volume type
+Instead of the storing the application data in `emptyDir` type of volume that goes away when
+the pod dies, we can store the data in the worker node. This volume type is called `hostPath`. 
+This volume type survives pod's death though
+it works only if the new instance of the same pod is assigned to the same worker node. This
+problem can go away if the mount path is present on all workers and points to an external 
+storage device like NAS. <br>
 
-Name:	springboot-kubernetes.default.svc.cluster.local
-Address: 10.99.20.216
+```
+    spec:
+      volumes:
+        - name: host-tmp
+          hostPath:
+            path: /tmp  #The actual path in the worker host
+      containers:
+        - name: springboot-kubernetes
+          volumeMounts:
+            - name: host-tmp
+              mountPath: /tmp/host  #The application should write to /tmp/host folder because this is where the actual /tmp is mounted at
+              
+(base) -bash-3.2$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10005/hostpath/greeting
+Hello! Current time is: Mon May 10 15:21:23 GMT 2021
 
-/ # cat /etc/resolv.conf
-nameserver 10.96.0.10
-search default.svc.cluster.local svc.cluster.local cluster.local mip.storage.hpecorp.net
-options ndots:5
-/ #
-```
+$ curl -X POST -d 'Hello to worker volume'  http://m2-ess-vm196.mip.storage.hpecorp.net:10005/hostpath/post_greetings
+Hello+to+worker+volume= saved successfully
 
-### To check the logs of the application running in the container
-Truncated the log. As there is only one container in the pod, we don't need to specify the conatiner name.
+$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10005/hostpath/get_all_greetings
+["Hello+to+worker+volume= stored in host:springboot-kubernetes-578f5d7df-7p6xt on Mon May 10 15:28:24 GMT 2021 in file /tmp/host/greetingsFile.txt"]
 ```
-[root@m2-ess-vm198 ~]# kubectl logs --since=24h springboot-kubernetes-86c4f866fc-nlpc5
-
-2021-05-07 04:01:39.777  INFO 1 --- [           main] c.e.k.s.SpringbootKubernetesApplication  : Starting SpringbootKubernetesApplication v0.0.1-SNAPSHOT on springboot-kubernetes-86c4f866fc-nlpc5 with PID 1 (/app.jar started by root in /)
-2021-05-07 04:01:41.213  INFO 1 --- [           main] c.e.k.s.SpringbootKubernetesApplication  : Started SpringbootKubernetesApplication in 1.757 seconds (JVM running for 2.146)
-In WelcomeController.greeting
+Both the pods in this example were assigned to the same worker. So all the POSTed messages 
+go to the same file at the mount path on the worker node 201.
 ```
-If we want, we can find the container name using `kubectl describe pod <pod name>` and specify that in the command.
-```
-kubectl logs springboot-kubernetes-86c4f866fc-nlpc5 springboot-kubernetes
-```
-
-### To login to the pod
-```
-kubectl exec -it springboot-kubernetes-86c4f866fc-nlpc5 -- /bin/sh
-
-/ # ps -ef
-PID   USER     TIME  COMMAND
-    1 root      1:05 java -jar app.jar
-```
-We can also login to the docker container directly. Login to the worker node 201 and run the below.
-```
-[root@m2-e910-201 ~]# docker ps
-CONTAINER ID   IMAGE                                              COMMAND                  CREATED        STATUS        PORTS     NAMES
-3306e8f8e3f9   10.163.168.91:443/choudary/springboot-kubernetes   "java -jar app.jar"      17 hours ago   Up 17 hours             k8s_springboot-kubernetes_springboot-kubernetes-86c4f866fc-nlpc5_default_54635e7c-f3fe-4d86-afaf-1527ca3ca8cf_1
-
-[root@m2-e910-201 ~]# docker exec -it 3306e8f8e3f9 /bin/bash
-bash-5.0# ls /
-app.jar  bin  dev  etc	home  lib  lib64  media  mnt  opt  proc  root  run  sbin  srv  sys  tmp  usr  var
-bash-5.0# ps ef
-PID   USER     TIME  COMMAND
-    1 root      1:06 java -jar app.jar
+[root@m2-e910-201 ~]# hostname
+m2-e910-201.mip.storage.hpecorp.net
+[root@m2-e910-201 ~]# hostname -i
+10.163.169.201
+[root@m2-e910-201 ~]# cat /tmp/greetingsFile.txt
+Hello+to+worker+volume= stored in host:springboot-kubernetes-578f5d7df-7p6xt on Mon May 10 15:28:24 GMT 2021 in file /tmp/host/greetingsFile.txt
+Hello+again+to+worker+volume= stored in host:springboot-kubernetes-578f5d7df-7668b on Mon May 10 15:33:19 GMT 2021 in file /tmp/host/greetingsFile.txt
 ```

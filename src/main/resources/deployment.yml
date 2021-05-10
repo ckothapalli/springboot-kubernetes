@@ -1,21 +1,35 @@
-apiVersion: apps/v1 
-kind: Deployment    
-metadata:              
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: springboot-kubernetes
   labels:
     app: springboot-kubernetes
-spec:                
-  selector:         
+spec:
+  selector:
     matchLabels:
       app: springboot-kubernetes
   replicas: 2
   template:
     metadata:
-      labels:        
+      labels:
         app: springboot-kubernetes
     spec:
+      volumes:
+        - name: content
+          emptyDir: {}
+
+        - name: host-tmp
+          hostPath:
+            path: /tmp  #The actual path in the worker host
+
       containers:
         - name: springboot-kubernetes
-          image: 10.163.168.91:443/choudary/springboot-kubernetes:2.0
+          image: 10.163.168.91:443/choudary/springboot-kubernetes:volume_mount
           ports:
             - containerPort: 8080
+          volumeMounts:
+            - name: content
+              mountPath: /tmp/pod_temp  #A /pod_temp folder created inside a pod that persists across container restarts. Application should write to this folder
+
+            - name: host-tmp
+              mountPath: /tmp/host  #The application should write to /tmp/host folder because this is where the actual /tmp is mounted at
