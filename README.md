@@ -331,6 +331,110 @@ With PV, we are essentially moving the storage information out of pod definition
 pod referes to PV through PVC.
 ![](./screenshots/pod-pvc-pv-relationship.png)
 ![](./screenshots/pod-nfs-mounting.png)
+
+### Sample application for PersistentVolume
+
+Delete the earlier deployment and recreate after creating the PV and PVC. 
+```
+kubectl apply -f pv.yml --namespace=volume-mount
+kubectl apply -f pvc.yml --namespace=volume-mount
+kubectl apply -f deployment.yml --namespace=volume-mount
+
+[root@m2-ess-vm198 volume_mount]# kubectl get pv
+NAME                       CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM                                      STORAGECLASS   REASON   AGE
+springboot-kubernetes-pv   10Gi       RWX            Retain           Bound       volume-mount/springboot-kubernetes-claim                           24m
+test-simplepv              1Gi        RWO            Delete           Available                                                                      22h
+[root@m2-ess-vm198 volume_mount]# kubectl describe pv springboot-kubernetes-pv
+Name:            springboot-kubernetes-pv
+Labels:          <none>
+Annotations:     pv.kubernetes.io/bound-by-controller: yes
+Finalizers:      [kubernetes.io/pv-protection]
+StorageClass:
+Status:          Bound
+Claim:           volume-mount/springboot-kubernetes-claim
+Reclaim Policy:  Retain
+Access Modes:    RWX
+VolumeMode:      Filesystem
+Capacity:        10Gi
+Node Affinity:   <none>
+Message:
+Source:
+    Type:          HostPath (bare host directory volume)
+    Path:          /tmp/pv
+    HostPathType:
+Events:            <none>
+```
+PV is not specific to a namespace. It's at the cluster level, which can be seen in the Kubernetes
+UI as well. The PV here is defined as HostPath type (folder on the worker node)
+```
+[root@m2-ess-vm198 volume_mount]# kubectl describe pvc springboot-kubernetes-claim -n volume-mount
+   Name:          springboot-kubernetes-claim
+   Namespace:     volume-mount
+   StorageClass:
+   Status:        Bound
+   Volume:        springboot-kubernetes-pv
+   Labels:        <none>
+   Annotations:   pv.kubernetes.io/bind-completed: yes
+                  pv.kubernetes.io/bound-by-controller: yes
+   Finalizers:    [kubernetes.io/pvc-protection]
+   Capacity:      10Gi
+   Access Modes:  RWX
+   VolumeMode:    Filesystem
+   Used By:       springboot-kubernetes-64f9c74db4-hrmcj
+                  springboot-kubernetes-64f9c74db4-pxjzt
+   Events:        <none>
+   
+[root@m2-ess-vm198 volume_mount]# cat pvc.yml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: springboot-kubernetes-claim
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+      
+[root@m2-ess-vm198 volume_mount]# cat pv.yml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: springboot-kubernetes-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  hostPath:
+    path: "/tmp/pv"
+``` 
+Note that the PVC does not have any reference to the PV here, in spite of which, the PVC description lists 
+the PV as its `Volume`.
+
+Calling the application. This time, the application is deployed to different worker nodes.
+The file is written to `/tmp/pv` folder as defined in PV.
+```
+[root@m2-ess-vm198 volume_mount]# kubectl get po -o wide -n volume-mount
+NAME                                     READY   STATUS    RESTARTS   AGE   IP             NODE                                  NOMINATED NODE   READINESS GATES
+springboot-kubernetes-64f9c74db4-hrmcj   1/1     Running   0          35m   10.192.2.4     m2-e910-210.mip.storage.hpecorp.net   <none>           <none>
+springboot-kubernetes-64f9c74db4-pxjzt   1/1     Running   0          35m   10.192.0.132   m2-e910-209.mip.storage.hpecorp.net   <none>           <none>
+
+$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10004/pv/greeting
+Hello! Current time is: Tue May 11 20:08:38 GMT 2021
+
+ curl -X POST -d 'Hello to persitent volume'  http://m2-ess-vm196.mip.storage.hpecorp.net:10004/pv/post_greetings
+Hello+to+persitent+volume= saved successfully
+
+$ curl http://m2-ess-vm196.mip.storage.hpecorp.net:10004/pv/get_all_greetings
+["Hello2 stored in host:springboot-kubernetes-64f9c74db4-hrmcj on Tue May 11 19:37:23 GMT 2021 in file /tmp/pv/greetingsFile.txt","Hello+to+persitent+volume= stored in host:springboot-kubernetes-64f9c74db4-hrmcj on Tue May 11 20:11:03 GMT 2021 in file /tmp/pv/greetingsFile.txt"]
+
+[root@m2-e910-210 ~]# cat /tmp/pv/greetingsFile.txt
+Hello2 stored in host:springboot-kubernetes-64f9c74db4-hrmcj on Tue May 11 19:37:23 GMT 2021 in file /tmp/pv/greetingsFile.txt
+Hello+to+persitent+volume= stored in host:springboot-kubernetes-64f9c74db4-hrmcj on Tue May 11 20:11:03 GMT 2021 in file /tmp/pv/greetingsFile.txt
+
+```
+
 ###CSI
 
 Create a Secret to connect to the mapr cluster
@@ -390,3 +494,4 @@ master IP.
          securityType: "secure"
          platinum: "true"
 ```
+
