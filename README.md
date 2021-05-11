@@ -189,7 +189,8 @@ Events:
   Warning  HpeCp   4m52s (x17 over 10m)  hpecp-agent  Failed to query HPECP K8S services
 ```
 The Controller service was down for some reason and that might have caused the above issue. 
-Once the ECP Controller is restarted, the service worked just fine.
+Once the ECP Controller is restarted, the service worked just fine and the Annotation 
+showed as well.
 ```
 [root@m2-ess-vm198 ~]# kubectl describe service springboot-kubernetes -n volume-mount
 Name:                     springboot-kubernetes
@@ -310,4 +311,82 @@ m2-e910-201.mip.storage.hpecorp.net
 [root@m2-e910-201 ~]# cat /tmp/greetingsFile.txt
 Hello+to+worker+volume= stored in host:springboot-kubernetes-578f5d7df-7p6xt on Mon May 10 15:28:24 GMT 2021 in file /tmp/host/greetingsFile.txt
 Hello+again+to+worker+volume= stored in host:springboot-kubernetes-578f5d7df-7668b on Mon May 10 15:33:19 GMT 2021 in file /tmp/host/greetingsFile.txt
+```
+
+### Persistent Volume (PV)
+Why do we need persistent volumes? <br>
+We need them to decouple the information related to storage from the pod definition itself. Here is an example to illustrate this point. <br>
+`nfs` is a volume type where we can configure the storage to the nfs. In the below example, the NFS IP needs to be
+specified in pod definition. If we want to decouple this from the pod definition, PVs help so that the same pod
+definition can be deployed on multiple workers. The PV definition will contain the NFS IP and other details. 
+```  
+volumes:                      
+- name: mongodb-data          
+    nfs:
+      server: 1.2.3.4 #nfs IP address
+      path: /some/path  #path exported by the server
+```
+With PV, we are essentially moving the storage information out of pod definition to PV definition.
+![](./screenshots/why_pv.png)
+pod referes to PV through PVC.
+![](./screenshots/pod-pvc-pv-relationship.png)
+![](./screenshots/pod-nfs-mounting.png)
+###CSI
+
+Create a Secret to connect to the mapr cluster
+```
+kubectl create namespace test-csi-ns
+
+[root@m2-ess-vm198 csi]# cat mapr-ticket-secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mapr-ticket-secret
+  namespace: test-csi-ns
+type: Opaque
+data:
+  CONTAINER_TICKET: bXMxLmNob3VkYXJ5Lm1hcHIubmV0IHRGZUdLYXI5Z3ljUDdocGVBQXFselFwMVhmNDdDNUNuUDdHZmgvdlNlb3hPbExmZ2xSb0w0NzFiTzJMczFNajR2OUhoSXNTeTA2eXFRZitHN3gwOFR0QXp6c2dJODNIS0ZZQit2a3ZEUjJ5MHJPaUFPOGdkMUYxblBZcjJENW1rQUUweEhDZWlYV1Fpa1V5Y243UzJGaS9BRWdRRUFsN3JabEMyUExVNXBkNUp0Kzh0aUhFaUhnaFAzV3ZCVVRxRk5PdUdFZWUyWW1CblNyWTU4cDJDT3JGYzJHNmhHbmdLSVdza3JkTVRMSE5aeHNkYUEzYisyV3ZqUXErUHpCWHdOMXlVMTQyNEg0cy9wdTI4ZHFyaWRyZUpQSXNPUVptYmZ6eGw3dFpSZ2ZGZgo=
+```
+
+The CONTAINER_TICKET is obtained from the below command on the mapr cluster node after
+logging in as svcmr4y, the mapr admin account.
+```
+[svcmr4y@m2-ps-vm18 ~]$ maprlogin password
+   [Password for user 'svcmr4y' at cluster 'ms1.choudary.mapr.net': ]
+   MapR credentials of user 'svcmr4y' for cluster 'ms1.choudary.mapr.net' are written to '/tmp/maprticket_9999'
+
+[svcmr4y@m2-ps-vm18 ~]$ cat /tmp/maprticket_9999 | base64
+   bXMxLmNob3VkYXJ5Lm1hcHIubmV0IHRGZUdLYXI5Z3ljUDdocGVBQXFselFwMVhmNDdDNUNuUDdH
+   ZmgvdlNlb3hPbExmZ2xSb0w0NzFiTzJMczFNajR2OUhoSXNTeTA2eXFRZitHN3gwOFR0QXp6c2dJ
+   ODNIS0ZZQit2a3ZEUjJ5MHJPaUFPOGdkMUYxblBZcjJENW1rQUUweEhDZWlYV1Fpa1V5Y243UzJG
+   aS9BRWdRRUFsN3JabEMyUExVNXBkNUp0Kzh0aUhFaUhnaFAzV3ZCVVRxRk5PdUdFZWUyWW1CblNy
+   WTU4cDJDT3JGYzJHNmhHbmdLSVdza3JkTVRMSE5aeHNkYUEzYisyV3ZqUXErUHpCWHdOMXlVMTQy
+   NEg0cy9wdTI4ZHFyaWRyZUpQSXNPUVptYmZ6eGw3dFpSZ2ZGZgo=
+```
+
+Create a PV with the namespace created earlier. Specify the mapr cluster name and the cldb 
+master IP.
+
+```
+[root@m2-ess-vm198 csi]# cat fusepv.yaml
+   apiVersion: v1
+   kind: PersistentVolume
+   metadata:
+     name: test-simplepv
+     namespace: test-csi-ns
+   spec:
+     accessModes:
+     - ReadWriteOnce
+     persistentVolumeReclaimPolicy: Delete
+     capacity:
+       storage: 1Gi
+     csi:
+       driver: com.mapr.csi-kdf
+       volumeHandle: test-simplepv
+       volumeAttributes:
+         volumePath: "/"
+         cluster: "ms1.choudary.mapr.net"
+         cldbHosts: "10.163.169.18"
+         securityType: "secure"
+         platinum: "true"
 ```

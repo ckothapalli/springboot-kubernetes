@@ -22,6 +22,10 @@ spec:
           hostPath:
             path: /tmp  #The actual path in the worker host
 
+        - name: persistent-volume-claim
+          persistentVolumeClaim:
+            claimName: springboot-kubernetes-claim  #pvc defined in pvc.yml
+
       containers:
         - name: springboot-kubernetes
           image: 10.163.168.91:443/choudary/springboot-kubernetes:volume_mount
@@ -33,3 +37,6 @@ spec:
 
             - name: host-tmp
               mountPath: /tmp/host  #The application should write to /tmp/host folder because this is where the actual /tmp is mounted at
+
+            - name: persistent-volume-claim
+              mountPath: /tmp/pv    #Application writes to this path. The actual volume path is defined in PersistentVolume file pv.yml

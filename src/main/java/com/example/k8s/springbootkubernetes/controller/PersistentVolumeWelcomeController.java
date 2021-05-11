@@ -4,12 +4,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Sample controller for hostPath volume type
+ * Sample controller for PersistentVolume sample
  */
 @RestController
-@RequestMapping("hostpath")
-public class HostpathWelcomeController extends  AbstractWelcomeController{
+@RequestMapping("pv")
+public class PersistentVolumeWelcomeController extends  AbstractWelcomeController{
 	public String getGreetingsFolder(){
-		return "/tmp/host";
+		return "/tmp/pv";
 	}
 }
