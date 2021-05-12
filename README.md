@@ -435,9 +435,34 @@ Hello+to+persitent+volume= stored in host:springboot-kubernetes-64f9c74db4-hrmcj
 
 ```
 
-###CSI
+### CSI
 
-Create a Secret to connect to the mapr cluster
+#### Apply the CSI driver
+Download the yaml from https://github.com/mapr/mapr-csi/blob/master/deploy/kubernetes/csi-maprkdf-v1.2.0.yaml.
+Change the mount paths as mentioned at https://jira-pro.its.hpecorp.net:8443/browse/EZKDF-223.
+The changes are essentially in two places where mountPath and path are changed to `/var/lib/docker/kubelet`:
+```
+               - name: pods-mount-dir
+   
+                 mountPath: /var/lib/docker/kubelet
+   
+                 mountPropagation: "Bidirectional"
+   
+   <snipped>
+   
+         volumes:
+   
+   <snipped>
+   
+           - name: pods-mount-dir
+   
+             hostPath:
+   
+               path: /var/lib/docker/kubelet
+   
+               type: Directory```
+```
+##### Create a Secret to connect to the mapr cluster
 ```
 kubectl create namespace test-csi-ns
 
@@ -468,30 +493,106 @@ logging in as svcmr4y, the mapr admin account.
    NEg0cy9wdTI4ZHFyaWRyZUpQSXNPUVptYmZ6eGw3dFpSZ2ZGZgo=
 ```
 
-Create a PV with the namespace created earlier. Specify the mapr cluster name and the cldb 
-master IP.
+Create a PV with the same namespace created earlier. Specify the mapr cluster name and the cldb 
+master IP. The `volumePath` should match a volume in the external DF.
 
 ```
-[root@m2-ess-vm198 csi]# cat fusepv.yaml
-   apiVersion: v1
-   kind: PersistentVolume
-   metadata:
-     name: test-simplepv
-     namespace: test-csi-ns
-   spec:
-     accessModes:
-     - ReadWriteOnce
-     persistentVolumeReclaimPolicy: Delete
-     capacity:
-       storage: 1Gi
-     csi:
-       driver: com.mapr.csi-kdf
-       volumeHandle: test-simplepv
-       volumeAttributes:
-         volumePath: "/"
-         cluster: "ms1.choudary.mapr.net"
-         cldbHosts: "10.163.169.18"
-         securityType: "secure"
-         platinum: "true"
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: test-csi-pv
+  namespace: test-csi-ns
+  labels:
+    name: test-csi-pv
+spec:
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  capacity:
+    storage: 5Gi
+  csi:
+    nodePublishSecretRef:
+      name: "mapr-ticket-secret"
+      namespace: "test-csi-ns"
+    driver: com.mapr.csi-kdf
+    volumeHandle: test-csi-pv
+    volumeAttributes:
+      volumePath: "/csi-test"
+      cluster: "ms1.choudary.mapr.net"
+      cldbHosts: "10.163.169.18"
+      securityType: "secure"
+      platinum: "true"
 ```
 
+The volume info in external DF (snippet):
+```
+[svcmr4y@m2-ps-vm18 ~]$ maprcli volume info -name csi-test -json
+{
+	
+	"data":[
+		{
+			"acl":{
+				"Principal":"User svcmr4y",
+				"Allowed actions":"[dump, restore, m, a, d, fc]"
+			},
+			"creator":"svcmr4y",
+			"aename":"svcmr4y",
+			"mountdir":"/csi-test",
+			"volumename":"csi-test",
+
+```
+Create PVC
+```
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: test-csi-pvc
+  namespace: test-csi-ns
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+```
+
+Create a test pod. See the pod referring to the PVC defined above.
+```
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-csi-pod
+  namespace: test-csi-ns
+spec:
+  securityContext:
+    runAsUser: 9999
+    fsGroup: 9999
+  containers:
+    - name: busybox
+      image: busybox
+      args:
+        - sleep
+        - "1000000"
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+      volumeMounts:
+        - mountPath: /mapr2
+          name: maprflex
+  volumes:
+    - name: maprflex
+      persistentVolumeClaim:
+        claimName: test-csi-pvc
+```
+Login to the pod:
+```
+[root@m2-ess-vm198 volume_mount]# kubectl exec -it test-csi-pod -n test-csi-ns -- /bin/sh
+/ $ cat /mapr2/test
+aaaaaaaa
+bbbbbbb
+cccccccccc
+ddddddddddddd
+
+```
+The same file was created already in a test volume in external DF and it can be seen here.

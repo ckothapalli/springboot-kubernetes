@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-csi-pod
+  namespace: test-csi-ns
+spec:
+  securityContext:
+    runAsUser: 9999
+    fsGroup: 9999
+  containers:
+    - name: busybox
+      image: busybox
+      args:
+        - sleep
+        - "1000000"
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "500m"
+      volumeMounts:
+        - mountPath: /mapr
+          name: maprflex
+  volumes:
+    - name: maprflex
+      persistentVolumeClaim:
+        claimName: test-csi-pvc
