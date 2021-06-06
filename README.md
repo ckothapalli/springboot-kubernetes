@@ -154,7 +154,7 @@ index.html           100% |*****************************************************
 </html>
 ```
 
-We can also see the how the DNS record is for this service. The serviceName.namespace.svc.clusterName is the fully qualified domain name of the service.
+We can also see the how the DNS record is for this service. The serviceName.namespace.svc.clusterRootDomain is the fully qualified domain name of the service.
 
 ```
 / # nslookup nginx-svc-np
