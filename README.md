@@ -1,42 +1,103 @@
-# springboot-kubernetes
-### To export and import the docker images from local Mac to the K8s master node
-docker build -t springboot-kubernetes:2.0 .
-docker save -o /tmp/springboot-k8sV2.tar springboot-kubernetes:2.0
+# Deploy nginx pod
 
-scp /tmp/springboot-k8sV2.tar root@10.163.168.253:/tmp
+```
+kubectl run nginx --image=nginx
 
-On the K8s master node 253:
-docker load -i /tmp/springboot-k8sV2.tar
-[root@m2-ess-vm198 ~]# docker images
-REPOSITORY                             TAG         IMAGE ID       CREATED          SIZE
-springboot-kubernetes                  2.0         e85d672d59a2   17 minutes ago   171MB
+vagrant@kubemaster2:~$ kubectl get po -o wide --show-labels
+NAME    READY   STATUS    RESTARTS   AGE   IP          NODE         NOMINATED NODE   READINESS GATES   LABELS
+nginx   1/1     Running   0          61s   10.36.0.1   kubenode22   <none>           <none>            run=nginx
+```
+The label ```run=nginx``` is given by default.
+The pod is assigned IP 10.36.0.1
 
-### Tag it to the private docker repo (on K8s master node)
-docker tag springboot-kubernetes:2.0 10.163.168.91:443/choudary/springboot-kubernetes:2.0
+Login to the pod and test nginx. We confirm that the nginx is running on port 80 in the pod
+```
+vagrant@kubemaster2:~$ kubectl exec -it nginx -- /bin/sh
+# curl http://localhost:80
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+...
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+```
+# Deploy a NodePort type service and expose the above nginx pod through it
+See that we set the targetPort to 80, which is the port on which nginx is running in the pod.
+We did not explicitly specify the nodePort (the port for a node through which the service is exposed)
+```
+vagrant@kubemaster2:~$ cat serv.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-svc-np
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    run: nginx
 
-### Add the private registry IP to NO_PROXY list on master node and restart docker
-[root@m2-ess-vm198 ~]# cat /etc/systemd/system/docker.service.d/http-proxy.conf
-[Service]
-Environment="HTTP_PROXY=http://web-proxy.corp.hpecorp.net:8080"
-Environment="HTTPS_PROXY=http://web-proxy.corp.hpecorp.net:8080"
-#Environment="NO_PROXY=$no_proxy"
-#Environment="NO_PROXY=localhost,127.0.0.1,10.163.168.248,10.163.168.249,10.163.168.250,10.163.168.25[1-2],10.163.168.25[3-5],10.163.169.20[1-3],.mip.storage.hpecorp.net"
-Environment="NO_PROXY=localhost,127.0.0.1,10.163.168.248,10.163.168.249,10.163.168.250,10.163.168.251,10.163.168.252,10.163.168.253,10.163.168.254,10.163.168.255,10.163.169.201,10.163.169.202,10.163.169.203,10.163.169.204,10.163.169.205,10.163.169.206,10.163.169.207,10.163.169.208,10.163.169.209,10.163.169.210,10.163.169.211,10.163.169.212,.mip.storage.hpecorp.net,10.163.168.91"
+kubectl apply -f serv.yaml
 
-systemctl daemon-reload
-systemctl restart docker
+vagrant@kubemaster2:~$ kubectl get svc -o wide
+NAME           TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE    SELECTOR
+kubernetes     ClusterIP   10.96.0.1       <none>        443/TCP        7d8h   <none>
+nginx-svc-np   NodePort    10.99.167.197   <none>        80:32502/TCP   43m    run=nginx
 
-On the master node, copy the ca.crt file from the registry machine to the location below. In the below example, it is copied from another worker node to the master node
-scp root@10.163.169.201:/etc/docker/certs.d/10.163.168.91:443/ca.crt /etc/docker/certs.d/10.163.168.91\:443/
-[root@m2-ess-vm198 ~]# ls /etc/docker/certs.d/10.163.168.91:443
-ca.crt
 
-### Push to the private docker registry
-Now we will be able to push the docker registry
-docker push 10.163.168.91:443/choudary/springboot-kubernetes:2.0
+vagrant@kubemaster2:~$ kubectl describe svc nginx-svc-np
+Name:                     nginx-svc-np
+Namespace:                default
+Labels:                   <none>
+Annotations:              <none>
+Selector:                 run=nginx
+Type:                     NodePort
+IP Family Policy:         SingleStack
+IP Families:              IPv4
+IP:                       10.99.167.197
+IPs:                      10.99.167.197
+Port:                     <unset>  80/TCP
+TargetPort:               80/TCP
+NodePort:                 <unset>  32502/TCP
+Endpoints:                10.36.0.1:80
+```
 
-[root@m2-ess-vm198 ~]# docker images
-REPOSITORY                                         TAG         IMAGE ID       CREATED          SIZE
-10.163.168.91:443/choudary/springboot-kubernetes   2.0         e85d672d59a2   30 minutes ago   171MB
-springboot-kubernetes                              2.0         e85d672d59a2   30 minutes ago   171MB
+Note the selector, which is set to the label of the nginx pod deployed above.
+See the Endpoints, through which we can access the ngix.
+```
+vagrant@kubemaster2:~$ curl http://10.36.0.1:80
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+...
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+```
+
+We can access through the NodePort through any of the nodes as well.
+
+```
+vagrant@kubemaster2:~$ kubectl get no
+NAME          STATUS   ROLES                  AGE    VERSION
+kubemaster2   Ready    control-plane,master   7d8h   v1.21.1
+kubenode21    Ready    <none>                 7d8h   v1.21.1
+kubenode22    Ready    <none>                 7d8h   v1.21.1
+
+vagrant@kubemaster2:~$ curl http://kubenode22:32502
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+```
+
 
