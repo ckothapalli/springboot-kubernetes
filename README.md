@@ -164,3 +164,14 @@ Address:	10.96.0.10:53
 Name:	nginx-svc-np.default.svc.cluster.local
 Address: 10.99.167.197
 ```
+# How the DNS server itself is configured
+See the core-dns pods and how they are exposed through a kube-dns service. Check the pod label ```k8s-app=kube-dns``` which is used as the selector for the service.
+```
+vagrant@kubemaster2:~$ kubectl get po -n kube-system -o wide --show-labels | grep dns
+coredns-558bd4d5db-w62gj              1/1     Running   0          7d9h   10.32.0.3      kubemaster2   <none>           <none>            k8s-app=kube-dns,pod-template-hash=558bd4d5db
+coredns-558bd4d5db-wv8p2              1/1     Running   0          7d9h   10.32.0.2      kubemaster2   <none>           <none>            k8s-app=kube-dns,pod-template-hash=558bd4d5db
+vagrant@kubemaster2:~$
+vagrant@kubemaster2:~$ kubectl get svc -n kube-system -o wide
+NAME       TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)                  AGE    SELECTOR
+kube-dns   ClusterIP   10.96.0.10   <none>        53/UDP,53/TCP,9153/TCP   7d9h   k8s-app=kube-dns
+```
