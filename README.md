@@ -100,4 +100,67 @@ vagrant@kubemaster2:~$ curl http://kubenode22:32502
 </html>
 ```
 
+# DNS
 
+See the DNS exposed as a service kube-dns on ClusterIP 10.96.0.10.  
+```
+vagrant@kubemaster2:~$ kubectl get svc -A
+NAMESPACE     NAME           TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)                  AGE
+default       kubernetes     ClusterIP   10.96.0.1       <none>        443/TCP                  7d8h
+default       nginx-svc-np   NodePort    10.99.167.197   <none>        80:32502/TCP             73m
+kube-system   kube-dns       ClusterIP   10.96.0.10      <none>        53/UDP,53/TCP,9153/TCP   7d8h
+```
+
+This ClusterIP can be seen in the /etc/resolv.conf on any of the pods. This is how pods can find other services thorugh their names.
+Below, we can see the DNS record in the nginx pod itself.
+```
+vagrant@kubemaster2:~$ kubectl exec -it nginx -- /bin/sh
+# cat /etc/resolv.conf
+nameserver 10.96.0.10
+search default.svc.cluster.local svc.cluster.local cluster.local hitronhub.home
+options ndots:5
+```
+From the nginx pod itself, we can access the nginx service using DNS like below.
+```
+# curl http://nginx-svc-np
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+
+<p><em>Thank you for using nginx.</em></p>
+</body>
+</html>
+```
+
+Try the same from another test pod busybox. Here we create the busybox pod that waits for 1000 seconds. Then we log into the busybox and access the service using the DNS name.
+```
+kubectl run busybox --image=busybox --command sleep 1000
+
+kubectl exec -it busybox -- /bin/sh
+
+/ # wget http://nginx-svc-np
+Connecting to nginx-svc-np (10.99.167.197:80)
+saving to 'index.html'
+index.html           100% |************************************************************************************************************|   612  0:00:00 ETA
+'index.html' saved
+/ # cat index.html
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to nginx!</title>
+
+</body>
+</html>
+```
+
+We can also see the how the DNS record is for this service. The serviceName.namespace.svc.clusterName is the fully qualified domain name of the service.
+
+```
+/ # nslookup nginx-svc-np
+Server:		10.96.0.10
+Address:	10.96.0.10:53
+
+Name:	nginx-svc-np.default.svc.cluster.local
+Address: 10.99.167.197
+```
