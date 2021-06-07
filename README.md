@@ -189,6 +189,7 @@ authorization:
 cgroupDriver: systemd
 clusterDNS:
 - 10.96.0.10
+clusterDomain: cluster.local
 ```
 # How the DNS server itself is configured
 See the core-dns pods and how they are exposed through a kube-dns service. Check the pod label ```k8s-app=kube-dns``` which is used as the selector for the service.
