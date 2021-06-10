@@ -111,7 +111,7 @@ default       nginx-svc-np   NodePort    10.99.167.197   <none>        80:32502/
 kube-system   kube-dns       ClusterIP   10.96.0.10      <none>        53/UDP,53/TCP,9153/TCP   7d8h
 ```
 
-This ClusterIP can be seen in the /etc/resolv.conf on any of the pods. This is how pods can find other services thorugh their names.
+This ClusterIP of the kube-dns service can be seen in the /etc/resolv.conf on any of the pods. This is how pods can find other services thorugh their names.
 Below, we can see the DNS record in the nginx pod itself.
 ```
 vagrant@kubemaster2:~$ kubectl exec -it nginx -- /bin/sh
